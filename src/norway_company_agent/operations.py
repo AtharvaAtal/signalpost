@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import math
-import resource
 import sys
 from collections import Counter
 from typing import Iterable
+
+try:  # Unix only; Windows has no `resource` module
+    import resource
+except ImportError:  # pragma: no cover
+    resource = None
 
 
 def percentile(values: Iterable[float], quantile: float) -> float | None:
@@ -38,6 +42,33 @@ def domain_request_summary(counts: Counter[str]) -> dict[str, float | int | None
 
 
 def peak_rss_bytes() -> int:
-    value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    # macOS reports bytes; Linux and most BSD-derived CI images report KiB.
-    return int(value if sys.platform == "darwin" else value * 1024)
+    if resource is not None:
+        value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # macOS reports bytes; Linux and most BSD-derived CI images report KiB.
+        return int(value if sys.platform == "darwin" else value * 1024)
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        class _Counters(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD),
+                ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        counters = _Counters()
+        counters.cb = ctypes.sizeof(_Counters)
+        handle = ctypes.windll.kernel32.GetCurrentProcess()
+        ok = ctypes.windll.psapi.GetProcessMemoryInfo(
+            handle, ctypes.byref(counters), counters.cb
+        )
+        return int(counters.PeakWorkingSetSize) if ok else 0
+    return 0
