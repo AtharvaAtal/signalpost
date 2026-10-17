@@ -34,13 +34,11 @@ uv run python scripts/run_competition_batch.py \
 
 ## Measured 100-company smoke test
 
-The strict rerun report is `out/smoke-report-strict-002.json`. It records 538
-requests for 100 companies, or **5.38 requests per company**. The measured
-elapsed time was **99.72 seconds**. The report emitted 100 envelopes and
-passed its validation checks. Website terminal states were **93
-not_applicable, 4 ambiguous, 2 complete, and 1 blocked_policy**. The two
-published website URLs were `http://www.aelektronikk.no/` for organisation
-888567232 and `https://www.aiota.no/` for organisation 933787141.
+The strict rerun report is `out/smoke-report-strict-003.json`. It records
+538 requests for 100 companies, or **5.38 requests per company**. The measured
+elapsed time was **95.05 seconds**. The report emitted 100 envelopes and passed
+all validation checks. Website terminal states were **93 not_applicable, 4
+ambiguous, 2 complete, and 1 blocked_policy**.
 
 ## Limitations
 

@@ -257,6 +257,27 @@ def _extraction_state(text: str, soup: BeautifulSoup) -> str:
     return "js_fallback_candidate" if len(text.strip()) < 100 and len(soup.select("script[src]")) >= 2 else "static_complete"
 
 
+def _decode_response_body(raw: bytes, content_type: str) -> str:
+    declared = re.search(r"charset\s*=\s*['\"]?([^\s;'\"<>]+)", content_type, re.I)
+    encodings = [declared.group(1)] if declared else []
+    encodings.extend(["utf-8", "latin-1"])
+    attempted: set[str] = set()
+    for encoding in encodings:
+        normalized = encoding.casefold()
+        if normalized in attempted:
+            continue
+        attempted.add(normalized)
+        try:
+            return raw.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    raise UnicodeDecodeError("response", raw, 0, len(raw), "unable to decode response")
+
+
+def _clean_decoded_text(value: str) -> str:
+    return value.replace("\ufffd", "")
+
+
 def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_000_000) -> tuple[dict[str, Any], dict[str, Any]]:
     supplied_url = str(url or "").strip()
     supplied_scheme = bool(re.match(r"^https?://", supplied_url, re.I))
@@ -282,27 +303,30 @@ def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_
                 return evidence("website", "source_error", "registry_linked_company_website", normalized, note=f"Unsupported content type: {content_type}"), {"requests": 2, "bytes": len(raw), "latencies_ms": [elapsed]}
             final_url = response.geturl()
             assert_public_url(final_url)
-        html = raw.decode("utf-8", errors="replace")
+        html = _clean_decoded_text(_decode_response_body(raw, content_type))
         soup = BeautifulSoup(html, "lxml")
         structured = extruct.extract(html, base_url=final_url, syntaxes=["json-ld", "microdata", "opengraph"])
         text = trafilatura.extract(html, url=final_url, include_links=False, include_tables=False, favor_precision=True) or ""
-        title = soup.title.get_text(" ", strip=True) if soup.title else ""
+        text = _clean_decoded_text(text)
+        visible_text = " ".join(soup.stripped_strings)
+        page_text = text.strip() or visible_text.strip()
+        title = _clean_decoded_text(soup.title.get_text(" ", strip=True)) if soup.title else ""
         description_tag = soup.select_one('meta[name="description"], meta[property="og:description"]')
-        description = str(description_tag.get("content") or "").strip() if description_tag else ""
+        description = _clean_decoded_text(str(description_tag.get("content") or "").strip()) if description_tag else ""
         value = {
             "requested_url": normalized,
             "final_url": final_url,
             "registered_domain": _registered_domain(final_url),
             "title": title[:500],
             "description": description[:2000],
-            "main_text_excerpt": text[:5000],
+            "main_text_excerpt": page_text[:5000],
             "social_links": _social_links(final_url, soup),
             "structured_organisations": _jsonld_organisations(structured),
             "content_sha256": __import__("hashlib").sha256(raw).hexdigest(),
             "extraction_state": _extraction_state(text, soup),
         }
-        value["evidence_snippet"] = text.strip()[:240]
-        pages = [{"url": final_url, "title": title[:500], "main_text_excerpt": text[:5000], "content_sha256": value["content_sha256"]}]
+        value["evidence_snippet"] = page_text[:240] if page_text else ""
+        pages = [{"url": final_url, "title": title[:500], "main_text_excerpt": page_text[:5000], "content_sha256": value["content_sha256"]}]
         social = value["social_links"]
         crawl_errors = []
         requests = 2

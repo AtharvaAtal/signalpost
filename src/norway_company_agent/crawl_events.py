@@ -8,7 +8,7 @@ import trafilatura
 from bs4 import BeautifulSoup
 
 from .evidence import evidence, utc_now
-from .website import _extraction_state, _jsonld_organisations, _registered_domain, _social_links, normalize_homepage, structured_social_links
+from .website import _clean_decoded_text, _decode_response_body, _extraction_state, _jsonld_organisations, _registered_domain, _social_links, normalize_homepage, structured_social_links
 
 
 def extract_page_event(
@@ -37,12 +37,13 @@ def extract_page_event(
         return {**base, "status": "not_found" if status_code in {404, 410} else "source_error", "error": f"HTTP {status_code}"}
     if "html" not in content_type.casefold():
         return {**base, "status": "source_error", "error": f"Unsupported content type: {content_type}"}
-    page_html = body.decode("utf-8", errors="replace")
+    page_html = _clean_decoded_text(_decode_response_body(body, content_type))
     soup = BeautifulSoup(page_html, "lxml")
-    text = trafilatura.extract(page_html, url=final_url, include_links=False, include_tables=False, favor_precision=True) or ""
-    title = soup.title.get_text(" ", strip=True)[:500] if soup.title else ""
+    text = _clean_decoded_text(trafilatura.extract(page_html, url=final_url, include_links=False, include_tables=False, favor_precision=True) or "")
+    text = text.strip() or " ".join(soup.stripped_strings)
+    title = _clean_decoded_text(soup.title.get_text(" ", strip=True))[:500] if soup.title else ""
     description_tag = soup.select_one('meta[name="description"], meta[property="og:description"]')
-    description = str(description_tag.get("content") or "").strip()[:2000] if description_tag else ""
+    description = _clean_decoded_text(str(description_tag.get("content") or "").strip())[:2000] if description_tag else ""
     identity_nodes = soup.select(
         'footer, address, [itemprop="legalName"], [itemprop="address"], '
         '[itemprop="telephone"], [itemprop="email"]'
@@ -55,6 +56,7 @@ def extract_page_event(
         "title": title,
         "description": description,
         "main_text_excerpt": text[:5000],
+        "evidence_snippet": text[:240] if text else "",
         "identity_text_excerpt": identity_text,
         "social_links": _social_links(final_url, soup),
         "extraction_state": _extraction_state(text, soup),
@@ -157,6 +159,7 @@ def merge_profile_events(profile: dict[str, Any], events: list[dict[str, Any]]) 
         "structured_organisations": homepage.get("structured_organisations") or [],
         "content_sha256": homepage.get("content_sha256"),
         "extraction_state": homepage.get("extraction_state"),
+        "evidence_snippet": homepage.get("evidence_snippet") or "",
         "pages": list(unique_pages.values()),
         "crawl_errors": [
             {"url": item.get("final_url") or item.get("requested_url"), "error": item.get("error")}

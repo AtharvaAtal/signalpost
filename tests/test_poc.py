@@ -27,7 +27,7 @@ from norway_company_agent.external_footprint import aggregate_footprint, publish
 from norway_company_agent.external_tasks import plan_external_tasks  # noqa: E402
 from norway_company_agent.external_control import development_score, run_company_control, strategy_order  # noqa: E402
 from norway_company_agent.identity import apply_website_identity_gate, assess_social_identity, assess_website_identity  # noqa: E402
-from norway_company_agent.website import _extraction_state, _priority_links, _social_links, assert_public_url, normalize_homepage, normalize_social_url, structured_social_links  # noqa: E402
+from norway_company_agent.website import _clean_decoded_text, _decode_response_body, _extraction_state, _priority_links, _social_links, assert_public_url, normalize_homepage, normalize_social_url, structured_social_links  # noqa: E402
 from norway_company_agent.batch import evidence_terminal_state, profile_complete_for_modules, read_organisation_inputs, terminal_envelope, validate_envelopes  # noqa: E402
 from norway_company_agent.snapshots import SnapshotFetcher  # noqa: E402
 from bs4 import BeautifulSoup  # noqa: E402
@@ -824,6 +824,36 @@ class WebsiteTests(unittest.TestCase):
         self.assertEqual(result["website"]["status"], "ambiguous")
         self.assertEqual(set(result["website"]["value"]), {"identity_assessment", "social_links"})
         self.assertEqual(result["website"]["value"]["social_links"], [])
+
+    def test_evidence_snippet_must_be_literal_page_text(self):
+        profile = self.gated_profile(
+            title="Exact Company AS",
+            main_text_excerpt="Exact Company AS provides services.",
+            evidence_snippet="Not present on this page.",
+        )
+        result = apply_website_identity_gate(profile, profile["evidence"]["website"])
+        self.assertEqual(result["website"]["status"], "ambiguous")
+        self.assertFalse(result["assessment"]["publishable"])
+
+    def test_response_charset_fallbacks_do_not_store_replacement_characters(self):
+        body = "Føretak AS".encode("iso-8859-1")
+        decoded = _decode_response_body(body, "text/html; charset=iso-8859-1")
+        self.assertEqual(decoded, "Føretak AS")
+        self.assertNotIn("\ufffd", _clean_decoded_text(decoded))
+
+    def test_crawl_event_stores_a_literal_snippet_without_replacement_characters(self):
+        event = extract_page_event(
+            organisation_number="923609016",
+            requested_url="https://example.no/",
+            final_url="https://example.no/",
+            status_code=200,
+            content_type="text/html; charset=iso-8859-1",
+            body="<html><title>Føretak AS</title><body>Føretak AS provides services.</body></html>".encode("iso-8859-1"),
+            page_kind="homepage",
+        )
+        self.assertTrue(event["evidence_snippet"])
+        self.assertIn(event["evidence_snippet"], event["main_text_excerpt"])
+        self.assertNotIn("\ufffd", json.dumps(event, ensure_ascii=False))
 
     def test_interrupted_run_does_not_synthesize_terminal_failures(self):
         profiles = [{"organisation_number": "1", "website": "pending.no"}]
