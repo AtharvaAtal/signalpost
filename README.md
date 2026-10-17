@@ -81,6 +81,15 @@ The published archive was clean-room verified on August 24, 2026: 104 tests and 
 
 Increase `--count` and `--expected-count` together for a larger local test. The 100-row smoke test above is practice only; Builderr supplies the companies for every official run.
 
+The strict 100-company rerun on October 17, 2026 emitted 100 envelopes,
+passed validation, made 538 requests (5.38 per company), and took 99.72
+seconds. Website terminal states were 93 `not_applicable`, 4 `ambiguous`, 2
+`complete`, and 1 `blocked_policy`; only two website results were published.
+Strict identity gating rejects wrong-company pages, redirects to another
+registrable domain without the target organisation number, parked or expired
+pages, and website facts without an evidence snippet. Website discovery needs
+a search key, so coverage is intentionally low without one.
+
 ## The improvement loop
 
 1. Treat the organisation number as the anchor.

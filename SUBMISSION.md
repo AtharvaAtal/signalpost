@@ -34,13 +34,20 @@ uv run python scripts/run_competition_batch.py \
 
 ## Measured 100-company smoke test
 
-The committed report is [`docs/smoke-report.json`](docs/smoke-report.json).
-It records 538 requests for 100 companies, or **5.38 requests per company**.
-The run took about **89 seconds** (the report timestamps span about 89
-seconds). The report emitted 100 envelopes and passed its validation checks.
+The strict rerun report is `out/smoke-report-strict-002.json`. It records 538
+requests for 100 companies, or **5.38 requests per company**. The measured
+elapsed time was **99.72 seconds**. The report emitted 100 envelopes and
+passed its validation checks. Website terminal states were **93
+not_applicable, 4 ambiguous, 2 complete, and 1 blocked_policy**. The two
+published website URLs were `http://www.aelektronikk.no/` for organisation
+888567232 and `https://www.aiota.no/` for organisation 933787141.
 
 ## Limitations
 
-Website discovery needs a search key. Without one, website coverage is about
-**6%**. The official run therefore visits registry-listed websites only and
-does not claim broader website coverage.
+Website discovery needs a search key. Without one, website coverage is low:
+the strict 100-company rerun published **2 of 100** website results. The
+strict identity rule rejects redirects to another registrable domain without
+the target organisation number, parked or expired pages, different-company
+pages, and facts without a page evidence snippet. The official run therefore
+visits registry-listed websites only and does not claim broader website
+coverage.

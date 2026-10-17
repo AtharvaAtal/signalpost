@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 EvidenceStatus = Literal[
     "available",
+    "ambiguous",
+    "not_available",
     "not_found",
     "not_applicable",
     "not_fetched",

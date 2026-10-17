@@ -12,6 +12,7 @@ from .sampling import iter_bulk
 
 TERMINAL_STATES = {
     "complete",
+    "ambiguous",
     "not_applicable",
     "not_found",
     "blocked_policy",
@@ -102,6 +103,10 @@ def evidence_terminal_state(record: dict[str, Any] | None) -> str:
     if status == "available":
         return "complete"
     if status == "not_applicable":
+        return "not_applicable"
+    if status == "ambiguous":
+        return "ambiguous"
+    if status == "not_available":
         return "not_applicable"
     if status == "not_found":
         return "not_found"

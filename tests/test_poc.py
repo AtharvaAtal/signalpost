@@ -761,6 +761,70 @@ class OperationsTests(unittest.TestCase):
 
 
 class WebsiteTests(unittest.TestCase):
+    @staticmethod
+    def gated_profile(**value_changes):
+        value = {
+            "requested_url": "https://appelx.no/",
+            "final_url": "https://appelx.no/",
+            "title": "Appelx AS",
+            "main_text_excerpt": "Appelx AS provides software services to Norwegian companies.",
+            "evidence_snippet": "Appelx AS provides software services",
+        }
+        value.update(value_changes)
+        return {
+            "organisation_number": "914561302",
+            "name": "APPELX AS",
+            "evidence": {
+                "website": {
+                    "status": "available",
+                    "source_url": "https://appelx.no/",
+                    "value": value,
+                }
+            },
+        }
+
+    def test_redirect_to_different_domain_without_org_number_is_not_publishable(self):
+        website = self.gated_profile(
+            requested_url="https://appelx.no/",
+            final_url="https://wrong-company.no/",
+            title="Wrong Company",
+            main_text_excerpt="Wrong Company sells products.",
+            evidence_snippet="Wrong Company sells products.",
+        )["evidence"]["website"]
+        result = apply_website_identity_gate(self.gated_profile(), website)
+        self.assertEqual(result["website"]["status"], "ambiguous")
+        self.assertFalse(result["assessment"]["publishable"])
+        self.assertNotIn("final_url", result["website"]["value"])
+
+    def test_parked_page_is_not_publishable(self):
+        profile = self.gated_profile(
+            title="Domain expired",
+            main_text_excerpt="This domain has expired. Renew this domain.",
+            evidence_snippet="This domain has expired.",
+        )
+        result = apply_website_identity_gate(profile, profile["evidence"]["website"])
+        self.assertFalse(result["assessment"]["publishable"])
+        self.assertEqual(result["website"]["status"], "ambiguous")
+
+    def test_different_company_page_is_not_publishable(self):
+        profile = self.gated_profile(
+            title="Baerum Eiendomstaksering AS",
+            main_text_excerpt="Baerum Eiendomstaksering AS offers valuations.",
+            evidence_snippet="Baerum Eiendomstaksering AS offers valuations.",
+        )
+        result = apply_website_identity_gate(profile, profile["evidence"]["website"])
+        self.assertFalse(result["assessment"]["publishable"])
+        self.assertEqual(result["website"]["status"], "ambiguous")
+
+    def test_page_without_evidence_snippet_is_not_publishable(self):
+        profile = self.gated_profile(title="Homepage")
+        profile["evidence"]["website"]["value"].pop("evidence_snippet")
+        result = apply_website_identity_gate(profile, profile["evidence"]["website"])
+        self.assertFalse(result["assessment"]["publishable"])
+        self.assertEqual(result["website"]["status"], "ambiguous")
+        self.assertEqual(set(result["website"]["value"]), {"identity_assessment", "social_links"})
+        self.assertEqual(result["website"]["value"]["social_links"], [])
+
     def test_interrupted_run_does_not_synthesize_terminal_failures(self):
         profiles = [{"organisation_number": "1", "website": "pending.no"}]
         self.assertEqual(terminal_events_for_run(profiles, [], False), [])

@@ -5,6 +5,8 @@ import unicodedata
 import urllib.parse
 from typing import Any
 
+from .website import _registered_domain
+
 
 LEGAL_AND_GENERIC = {
     "as", "asa", "ans", "da", "enk", "iks", "sa", "sam", "sti", "stiftelsen",
@@ -64,13 +66,42 @@ def assess_website_identity(profile: dict[str, Any]) -> dict[str, Any]:
         "domain is for sale", "domain for sale", "hugedomains", "parked at", "miss hosting",
         "her flytter snart en ny gjest", "has been informing visitors",
         "find the best information and most relevant links on all topics related to",
+        "domain expired", "domain has expired", "this domain has expired",
+        "renew this domain", "buy this domain", "website expired",
     )
     normalized_raw = unicodedata.normalize("NFKD", candidate_text).encode("ascii", "ignore").decode().casefold()
     homepage_token_sets = [set(_tokens(part)) for part in homepage_identity_parts if part]
     exact_homepage_name = bool(core and any(set(core).issubset(tokens) for tokens in homepage_token_sets))
     substantive_homepage = len(str(value.get("main_text_excerpt") or "").strip()) >= 100
     is_business_sports_club = bool(re.search(r"(?:^|\s)B\.?\s*I\.?\s*L\.?(?:\s|$)", str(profile.get("name") or ""), re.I))
-    if any(marker in normalized_raw for marker in parked_markers):
+    declared_domain = _registered_domain(value.get("requested_url") or website.get("source_url") or "")
+    final_domain = _registered_domain(value.get("final_url") or website.get("source_url") or "")
+    cross_domain_without_org = bool(
+        declared_domain
+        and final_domain
+        and declared_domain != final_domain
+        and (not org_digits or org_digits not in compact_homepage_candidate)
+    )
+    snippet = str(
+        value.get("evidence_snippet")
+        or value.get("identity_text_excerpt")
+        or (value.get("title") if exact_homepage_name else "")
+        or ""
+    ).strip()
+    page_text = " ".join(
+        str(part or "") for part in [
+            value.get("title"),
+            value.get("description"),
+            value.get("main_text_excerpt"),
+            value.get("identity_text_excerpt"),
+            rendered.get("main_text_excerpt"),
+        ]
+    )
+    snippet_valid = bool(snippet and snippet in page_text)
+    if cross_domain_without_org:
+        score = 0.0
+        reasons.append("final URL changed to a different registered domain without the target organisation number on the page")
+    elif any(marker in normalized_raw for marker in parked_markers):
         score = 0.1
         reasons.append("captured page is a parked, for-sale, or generic hosting placeholder")
     elif is_business_sports_club and "bedriftsidrett" not in normalized_candidate_text and "b i l" not in normalized_candidate_text:
@@ -94,6 +125,9 @@ def assess_website_identity(profile: dict[str, Any]) -> dict[str, Any]:
     else:
         score = 0.3
         reasons.append("registry-linked URL lacks strong exact-entity identity evidence")
+    if not snippet_valid:
+        score = 0.0
+        reasons.append("no evidence snippet was supplied that appears in the captured page")
     status = "exact" if score >= 0.9 else "review" if score >= 0.8 else "related_or_uncertain"
     return {
         "status": status,
@@ -138,11 +172,24 @@ def assess_social_identity(profile: dict[str, Any], link: dict[str, str]) -> dic
 
 def apply_website_identity_gate(profile: dict[str, Any], website: dict[str, Any]) -> dict[str, Any]:
     if website.get("status") != "available":
+        if website.get("status") == "not_found":
+            website["status"] = "not_available"
         return {"website": website, "assessment": None, "quarantined_social_links": 0}
     temporary_profile = {**profile, "evidence": {**profile.get("evidence", {}), "website": website}}
     value = website.get("value") or {}
     assessment = assess_website_identity(temporary_profile)
+    if not assessment["publishable"]:
+        website["status"] = "ambiguous"
+        website["note"] = "Website evidence withheld because strict identity publication gates failed."
+        website["source_url"] = "https://data.brreg.no/enhetsregisteret/api/enheter"
+        website["value"] = {"identity_assessment": assessment, "social_links": []}
+        return {
+            "website": website,
+            "assessment": assessment,
+            "quarantined_social_links": len(list(value.get("discovered_social_links") or value.get("social_links") or [])),
+        }
     value["identity_assessment"] = assessment
+    value["evidence_snippet"] = str(value.get("evidence_snippet") or "").strip()
     original = list(value.get("discovered_social_links") or value.get("social_links") or [])
     value["discovered_social_links"] = original
     social_assessments = [assess_social_identity(profile, link) for link in original]
